@@ -1,0 +1,124 @@
+---
+title: "Asthma Meta-Analysis"
+subtitile: "Step-by-step"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Load data
+
+We're using the `asthma` data set from our csv file.
+
+The janitor package has a nice function that helps clean up some names.  This is very useful when you obtain a data set from someone else that doesn't adhere to the same style as you.  Often variables on Excel are written to be readable rather than function in programming.  Can't fault people for that.  Luckily, the `clean_names` function fixes all of that for us
+
+## Functions
+
+### cohens_d
+
+We're going to use a formula to calculate the pooled standard deviation between our groups.  Our formula has a default for n2 = n1 in the event that our groups are equal.  There is also a default sd2 = sd1 in the event that we are only using one estimate of variance.  This makes the formula more applicable to other uses.  Maybe a bit pointless here but never hurts to think about generalizability.
+
+$$d = \frac{\bar{x}_1 - \bar{x}_2}{s_p}$$
+
+$$s_p = \sqrt{\frac{(n_1 - 1)s^2_1 + (n2 - 1)s^2_2}{n_1 + n_2 - 2}}$$
+
+```{r cohens_d}
+cohens_d <- function(mean1, mean2, sd1, sd2 = sd1, n1, n2 = n1) {
+  sp2 <- ((n1 - 1) * sd1^2 + (n2 - 1) * sd2^2) / (n1 + n2 - 2)
+  (mean1 - mean2) / sqrt(sp2)
+}
+```
+
+### cd2r
+
+This is our conversion of Cohen's d to an r value.
+
+$$r = \frac{d}{\sqrt{d^2 - a}}$$
+
+$$a = \frac{(n_1 + n_2)^2}{n_1 n_2}$$
+
+```{r funs-cd2r}
+cd2r <- function(d, n1, n2 = n1) {
+  a <- sum(n1, n2)^2 / prod(n1, n2)
+  d / sqrt(d^2 + a)
+}
+```
+
+### mw2r
+
+We have a couple of tests that report on the results of a Mann-Whitney sign test.
+
+$$r = \frac{Z}{\sqrt{n}}$$
+$$Z = \frac{W - m_W \pm 0.5}{\sigma_W}$$
+$$\sigma_W = \sqrt{\frac{n(n + 1)(2n + 1)}{6}}$$
+
+```{r}
+mw2r <- function(w, n, mw = 0) {
+  ow <- sqrt(prod(n, n - 1, 2, n + 1, 1/6))
+  if((w - mw) <= 0) {
+    a <- .5
+  } else {
+    a <- -.5
+  }
+  z <- (w - mw + a) / ow
+  z / sqrt(n)
+}
+```
+
+## Data
+
+We're going to load in the data `asthma` that is available.  I recreated the original data we used for some educational purposes.  There were a few assumptions we had made in order to run our data through the Comphrension Meta-Analysis program.  Luckily for us, we can correct some of these things.  Here are a few things we can do now:
+
++ Some studies reported only on a group of asthma persons
+    - These studies reported on scaled/standard scores
+    - We know the means and standard deviations of these scores so we don't actually need to test a control group
+    - Our measure of effect here will not need to use a pooled standard deviation for d
++ One study did not report means and standard deviations
+    - This study reported on .99 CI and medians -- but also gave us Mann-Whitney U Rank Sum test results for relationships that were significant
+    - These we can convert easiy into R scores
++ Studies that reported on means and standard deviations of the asthma and control groups we can easily find a cohen's d value and then an r value
++ For all studies we can compute a common r value for effect size
+
+I'm using using an xlsx file instead of a csv because there are some updates I'd like to make and don't feel like constantly saving the document as two file formats or reformatting as a table and adjusting the spacing issues.
+
+```{r data}
+asthma <- readxl::read_xlsx("asthma-data.xlsx")
+
+asthma_effects <- asthma %>% 
+  mutate(id = row_number()) %>% 
+  group_by(id) %>% 
+  mutate(
+    group = case_when(
+      !is.na(m2) & !is.na(n2) ~ "A",
+      !is.na(m2) & is.na(n2) ~ "B",
+      stat_test == "Mann-Whitney" ~ "C",
+      TRUE ~ "D"),
+    effect = case_when(
+      group == "A" ~ cohens_d(m1, m2, sd1, sd2, n1, n2),
+      group == "B" ~ cohens_d(m1, m2, sd1, sd2, n1)), 
+    r = case_when(
+      group == "A" ~ cd2r(effect, n1, n2),
+      group == "B" ~ cd2r(effect, n1),
+      group == "C" ~ mw2r(ifelse(is.na(value), 0, value), n1)),
+    id_study = paste(id, study, sep = "_"),
+    id_study = fct_reorder(id_study, as.numeric(id)))
+# View(asthma_effects)
+
+
+
+ggplot(asthma_effects, aes(x = reorder(id_study, -id), y = r)) +
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  theme(axis.text.y = element_text(size = 5)) +
+  coord_flip()
+
+## Generate cohen's d scores for studies with an
+## Genetate r score from cohen's d scores
+## Generate r score from U statistics
+```
+
+It looks like we don't really have the best information for Dunleavy 1980.  Luckily I have the article so let's make a little data frame.
+

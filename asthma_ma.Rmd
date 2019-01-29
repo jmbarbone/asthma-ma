@@ -1,0 +1,152 @@
+---
+title: "Asthma Meta-Analysis"
+subtitle: "Show me that forest plot!"
+---
+
+A description of a meta-analysis on cogntive deficits associated with asthma across several neuropsychological domains.  Explanation of summary and measure metrics provided with visualizations.  Utilizes the `meta` package.
+
+## Background
+
+While I was an undergraduate at [West Chester University](http://www.wcupa.edu) I worked with my research advisor, [Dr. Farzin Irani](https://www.wcupa.edu/sciences-mathematics/psychology/fIrani.aspx) as a charter member of her ([Neuropsychology Research Group](http://shima60.wixsite.com/nrg-irani])).  Our first big project was a meta-analysis of cognitive deficits associated with asthma and chronic obstructive pulmonary disease (COPD).  This work eventually cumulative in the publication of our article [Is asthma associated with cognitive impariments?  A meta-analytic review](https://doi.org/10.1080/13803395.2017.1288802])along with Drs. [Janet Beausoleil](https://www.research.chop.edu/people/janet-l-beausoleil) and [Lynn Gerald](http://uacc.arizona.edu/profile/lynn-gerald), experts from the Children's Hospital of Philadelphia's (CHOP) Division of Allergy and Immunology and College of Publich Health at the University of Arizona, respectively.  We completed this analysis on the software program [Comprehensive Meta Analysis](https://www.meta-analysis.com/).  This was before I began using R and only knew a few tricks in MS Excel.  Needless to say, running a meta-analysis in R is a f^#%-ton easier.
+
+Our publication goes into further detail and utilizes a complete data set, but for simplicity let's limit ourselves.  I'll also be skipping over our initial literature search and methodlogy and go straight into the fun analytics.
+ 
+## Set up
+
+First we have to load in some packages.  I may begin every script with `library(tidyverse)` because of how dependet I've become on using piping and other simple tools provided.  Thje `meta` package will hold our main analyses and functions for generating plots.  I've already pulled in the data and saved it as the `dat` object.
+
+```{r setup, echo = T, message = F, comment = ""}
+library(meta)
+library(tidyverse)
+```
+
+```{r data, echo = F}
+csv <- read.csv("C:/Users/jmbar/Google Drive/1. Psychology/Research/Data/Asthma Meta Analysis New combined analysis All data.csv")
+dat <- csv %>%
+  ## Remove data without means and standard deviations reported
+  ## This is Dunleavy
+  filter(Type.of.study == "Control",
+         !is.na(Difference.in.means)) %>%
+  ## Create an id tag for easier reference
+  mutate(study_id = paste(ID, ". ", Study.name, " - ", Comparison, sep = ""))
+```
+
+## Analysis
+
+A discription of our analysis.
+
+Our analysis will be called through the `metacont()` function created specifically for calculating effect estimates with continous data from control and experimental groups.  Like many instances, our metrics may actually be interval data but we're going to assume a more continuous relationship so we can use this anslysis.  Psychology as a field is pretty complaint with these violations so nobody should be barking as us to stop immediately.
+
+Here are some arguments for which I'll provide a little more explanation:
+
+### Summary measure
+
+`sm = "SMD"`
+
+Here we will be using the **standard mean differences** for our summary measure to pool our studies.  Our other options are _mean difference_ (`MD`) or _ratio of means_ (`ROM`).  If all of these studies used the same instruments/scales to measure each cognitive domain, we would be able to use _mean difference_; but this is not the case.  Rater than using the formula $D = \bar{X}_1 - \bar{X}_2$ we need to implement a different formula:
+$$d =\frac{\bar{X}_1 - \bar{X}_2}{S_{within}}$$
+$$S_{within} = \sqrt{\frac{(n_1 - 1)S^2_1 + (n_2 - 1)S^2_2}{n_1 + n_2 - 2}}$$
+
+### Effect size
+
+`method = "Hedges"`
+
+This will be a method for determining our effect size.  Here we use **Hedge's g** rather than _Cohen's d_ because it provides a more accurate measure when variances are pooled.
+
+### Code
+
+```{r analysis, echo = T, comment = ""}
+ma <- metacont(
+
+  studlab = study_id,
+  
+  n.e = Asthma.Sample.size,
+  n.c = Control.Sample.size,
+  mean.e = Asthma.Mean,
+  mean.c = Control.Mean,
+  sd.e = Asthma.Std.Dev,
+  sd.c = Control.Std.Dev,
+  
+  data = dat,
+  subset = NULL,
+  exclude = NULL,
+  
+  sm = "SMD",
+  method.smd = "Hedges",
+  exact.smd = T,
+  
+  level = .95,
+  level.comb = .95,
+  
+  comb.fixed = T,
+  comb.random = T,
+  hakn = T,
+  method.tau = "DL",
+  tau.preset = NULL,
+  TE.tau = NULL,
+  tau.common = F,
+  prediction = F,
+  level.predict = .95,
+  method.bias = "linreg",
+  backtransf = T,
+  title = "",
+  complab = "",
+  outclab = "",
+  label.e = "Asthma",
+  label.c = "Control",
+  label.left = "",
+  label.right = "",
+  byvar = dat$Subgroup.within.study,
+  bylab = "",
+  print.byvar = T,
+  byseparator = "",
+  keepdata = T,
+  warn = T)
+```
+
+
+## Summary 
+
+Now that we've written out model, all that is left to do is to find some summary metrics and make some plots.
+
+The model is created to utlize some easy wrappers such as `summary()` and some `meta` specific plotting such as `forest()` and `funnel()` which are very important for understanding your analysis.  The `summary()` function specifically removes our table of SMDs, 95% CIs, and study weights.  These we can look at as a forest plot for simplicity,
+
+``` {r summary, echo = T, comment = ""}
+summary(ma)
+```
+
+## Plots
+
+Any meta-analysis that doesn't show plots (your flowchart of article selection doesn't count) makes for a boring read.  The idea of a meta-analysis is to pool together a large amount of information and make some reasonable interpretation of the results.  Visually, plots help us achieve this by providing an easy, visual reference.
+
+### Forest
+
+Your forest plot represents your main findings.  `meta`'s plot isn't the prettiest but gets the job done pretty well.  We're not going to try to adjust much here although the `forest()` function provides quite a bit of room for visual edits. Here we have plotted the standarised mean differences and standard errors for each study as well as overall effect sizes for each domain.  We decided to calculated both Fixed and Random effects for comparison.  In this example, we have relatively the same findings.  
+
+**Fun fact**:  When we published our article I tried to make a foresst plot in R because we had some difficulties with the plot that was generated in CMA.  I did not know how to use `ggplot2` and didn't understand the basics of saving an image, so I gave up and made it in MS Excel.  That graph got published.  It haunts me to this day.
+
+```{r forest_plot, echo = T, comment = "", fig.width = 15, fig.height = 15}
+forest(ma)
+```
+
+### Funnel
+
+This plot allows us to visually examine any publication bias in our selected studies.
+
+Those two outlier dots?  Those are **Rietveld 1999 - Concentration accuracy** and **Rietveld 1999 - Concentration speed**.  We're about to take another look at those in our Baujat plot.
+
+```{r funnel, echo = T, comment = "", fig.width = 5, fig.height = 5}
+funnel(ma)
+```
+
+### Baujat
+
+```{r baujat, echo = T, comment = "", fig.width = 5, fig.height = 5}
+baujat(ma)
+```
+
+### Radial
+
+```{r radial, echo = T, comment = "", fig.width = 5, fig.height = 5}
+radial(ma)
+```
