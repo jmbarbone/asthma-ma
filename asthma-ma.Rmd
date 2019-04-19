@@ -84,8 +84,8 @@ We're going to load in the data `asthma` that is available.  I recreated the ori
 
 I'm using using an xlsx file instead of a csv because there are some updates I'd like to make and don't feel like constantly saving the document as two file formats or reformatting as a table and adjusting the spacing issues.
 
-```{r data}
-asthma <- readxl::read_xlsx("asthma-data.xlsx")
+```{r data, warning = F}
+asthma <- readxl::read_xlsx("C:/Users/jmbar/Documents/GitHub/asthma-ma/asthma-data.xlsx")
 
 asthma_effects <- asthma %>% 
   mutate(id = row_number()) %>% 
